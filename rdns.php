@@ -34,21 +34,13 @@ require_once("rdns_system_config.php");
 define("CLIENTAREA",true);
 //define("FORCESSL",true); # Uncomment to force the page to use https://
 
-if(file_exists("init.php"))
-{
-	require_once("init.php");
-}
-else
-{
-	require_once("dbconnect.php");
-}
+require_once("init.php");
 
-require_once("includes/functions.php");
-require_once("includes/clientareafunctions.php");
+$ca = new WHMCS_ClientArea();
 
-$pagetitle = $_LANG['clientareatitle'];
-
-initialiseClientArea($pagetitle,'');
+$ca->setPageTitle($whmcs->get_lang('clientareatitle'));
+$ca->initPage();
+$ca->requireLogin();
 
 $rdns_csrf_token = md5(uniqid(mt_rand(), true));
 setcookie("rdns_csrf_token", $rdns_csrf_token, 0, "/", "", $_SERVER["HTTPS"], TRUE);
@@ -62,21 +54,16 @@ $postfields["key"] = solus_master_key;
 $lsn_api_key = limestone_networks_api_key;
 
 # Check login status
-if ($_SESSION['uid']) {
+if ($ca->isLoggedIn()) {
 
-	$client_id = (int)html_sanitise(sql_sanitise($_SESSION['uid']));
-	$table = "tblclients";
-	$fields = "*";
-	$where = array(
-		"id"=>array("sqltype"=>"EQ","value"=>$client_id)
-	);
-	if(mysql_num_rows(select_query($table,$fields,$where)))
+	$client_id = (int)html_sanitise(sql_sanitise($ca->getUserID()));
+	if(mysql_num_rows(mysql_query("SELECT * FROM tblclients WHERE id='$client_id'")))
 	{
 		$adminuser = WHMCS_admin_user;
 		if($_GET["q"])
 		{
 			$templatefile = "rdns";
-			$client_service_id = $_GET["q"];
+			$client_service_id = html_sanitise(sql_sanitise($_GET["q"]));
 
 			$command = "getclientsproducts";
 			$values["clientid"] = $client_id;
@@ -169,7 +156,8 @@ if ($_SESSION['uid']) {
 			$results = localAPI($command,$values,$adminuser);
 			$smartyvalues["services"] = $results["products"]["product"];
 		}
-		outputClientArea($templatefile);
+		$ca->setTemplate($templatefile);
+		$ca->output();
 	}
 	else
 	{

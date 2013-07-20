@@ -54,20 +54,13 @@ require_once("rdns_system_config.php");
 define("CLIENTAREA",true);
 //define("FORCESSL",true); # Uncomment to force the page to use https://
 
-if(file_exists("init.php"))
-{
-	require_once("init.php");
-}
-else
-{
-	require_once("dbconnect.php");
-}
-require("includes/functions.php");
-require("includes/clientareafunctions.php");
+require_once("init.php");
 
-$pagetitle = $_LANG['clientareatitle'];
+$ca = new WHMCS_ClientArea();
 
-initialiseClientArea($pagetitle,'');
+$ca->setPageTitle($whmcs->get_lang('clientareatitle'));
+$ca->initPage();
+$ca->requireLogin();
 
 $solus_master_url = solus_master_url;
 $postfields["id"] = solus_master_id;
@@ -76,27 +69,23 @@ $lsn_api_key = limestone_networks_api_key;
 $smartyvalues["ipv4addresses"] = array(); 
 
 # Check login status
-if ($_SESSION['uid']) {
+if ($ca->isLoggedIn()) {
 
-	$client_id = (int)html_sanitise(sql_sanitise($_SESSION['uid']));
-	$table = "tblclients";
-	$fields = "*";
-	$where = array(
-		"id"=>array("sqltype"=>"EQ","value"=>$client_id)
-	);
-	if(mysql_num_rows(select_query($table,$fields,$where)))
+	$client_id = (int)html_sanitise(sql_sanitise($ca->getUserID()));
+	if(mysql_num_rows(mysql_query("SELECT * FROM tblclients WHERE id='$client_id'")))
 	{
 		$templatefile = "dordns";
 		if($_POST["rdns_csrf_token"] == "" || $_POST["rdns_csrf_token"] != $_COOKIE["rdns_csrf_token"])
 		{
 			$smartyvalues["ipv4addresses"]["error"] = "Incorrect CSRF token.";
-			outputClientArea($templatefile);
+			$ca->setTemplate($templatefile);
+			$ca->output();
 			exit();
 		}
 
 		if($_POST["serviceid"])
 		{
-			$client_service_id = $_POST["serviceid"];
+			$client_service_id = html_sanitise(sql_sanitise($_POST["serviceid"]));
 
 			$command = "getclientsproducts";
 			$adminuser = WHMCS_admin_user;
@@ -182,7 +171,8 @@ if ($_SESSION['uid']) {
 			$smartyvalues["ipv4addresses"]["error"] = "Service ID not included.";
 		}
 
-		outputClientArea($templatefile);
+		$ca->setTemplate($templatefile);
+		$ca->output();
 
 	}
 	else
