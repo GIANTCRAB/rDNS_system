@@ -11,7 +11,7 @@ function is_ipv6($ip)
 
 function html_sanitise($obj)
 {
-	$return = htmlentities($obj, ENT_QUOTES | ENT_IGNORE, "UTF-8");
+	$return = htmlspecialchars($obj, ENT_QUOTES, "UTF-8");
 	return $return;
 }
 
@@ -19,10 +19,12 @@ function sql_sanitise($data)
 {
 	if($return = mysql_real_escape_string(stripslashes(trim($data))))
 	{
+		//sanitise complete
 		return $return;
 	}
 	else
 	{
+		//mysql error here
 		$error = "Database sanitise error: (" . mysql_errno() . ") \"" . mysql_error() . "\" .";
 		error_log($error);
 		return FALSE;
@@ -53,27 +55,28 @@ $postfields["id"] = solus_master_id;
 $postfields["key"] = solus_master_key;
 $lsn_api_key = limestone_networks_api_key;
 
-# Check login status
+// Check login status
 if ($ca->isLoggedIn()) {
 
-	$client_id = (int)html_sanitise(sql_sanitise($ca->getUserID()));
+	$client_id = (int)$ca->getUserID(); //get the user id from the database
 	if(mysql_num_rows(mysql_query("SELECT * FROM tblclients WHERE id='$client_id'")))
 	{
-		$adminuser = WHMCS_admin_user;
+		$adminuser = WHMCS_admin_user; //set the admin user
 		if($_GET["q"])
 		{
+			//it is a specified query
 			$templatefile = "rdns";
-			$client_service_id = html_sanitise(sql_sanitise($_GET["q"]));
+			$client_service_id = html_sanitise(sql_sanitise($_GET["q"])); //get the client's service id
 
 			$command = "getclientsproducts";
 			$values["clientid"] = $client_id;
 			$values["serviceid"] = $client_service_id;
-			$results = localAPI($command,$values,$adminuser);
-			if($results)
+			$results = localAPI($command,$values,$adminuser); //get the client products using WHMCS
+			if($results && $results["products"]["product"]["0"]["status"] == "Active")
 			{
-				$client_server_id = $results["products"]["product"]["0"]["customfields"]["customfield"]["0"]["value"];
-				//solus
-
+				$client_server_id = $results["products"]["product"]["0"]["customfields"]["customfield"]["0"]["value"]; //get the client server's id from the whmcs api
+				
+				//solus part
 				$postfields["action"] = "vserver-infoall";
 				$postfields["vserverid"] = $client_server_id;
 
@@ -91,43 +94,44 @@ if ($ca->isLoggedIn()) {
 				$data = curl_exec($ch);
 				curl_close($ch);
 
-				preg_match_all('/<(.*?)>([^<]+)<\/\\1>/i', $data, $match);
-
-				$ch = curl_init();
-				curl_setopt($ch, CURLOPT_URL, "https://one.limestonenetworks.com/webservices/clientapi.php?key=" . $lsn_api_key . "&mod=ipaddresses&action=list");
-				curl_setopt($ch, CURLOPT_TIMEOUT, 20);
-				curl_setopt($ch, CURLOPT_HEADER, 0);
-				curl_setopt($ch, CURLOPT_FRESH_CONNECT, 1);
-				curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-				curl_setopt($ch, CURLOPT_FORBID_REUSE, 1);
-				curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-				curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 0);
-				curl_setopt($ch, CURLOPT_VERBOSE, 0);
-				curl_setopt($ch, CURLOPT_HTTP_VERSION, '1.0');
-				$data = curl_exec($ch);
-				curl_close($ch);
-				$server_data = simplexml_load_string($data);
-
+				preg_match_all('/<(.*?)>([^<]+)<\/\\1>/i', $data, $match); //match the solus data
 				$result = array();
 				foreach ($match[1] as $x => $y)
 				{
-					$result[$y] = $match[2][$x];
+					$result[$y] = $match[2][$x]; //do a matching
 				}
 
-				if($result["status"] == "success")
+				if($result["status"] == "success") //its a solusvm vserver-id!
 				{
+					//carry out LSN rDNS records retrieval
+					$ch = curl_init();
+					curl_setopt($ch, CURLOPT_URL, "https://one.limestonenetworks.com/webservices/clientapi.php?key=" . $lsn_api_key . "&mod=ipaddresses&action=list"); //list out the stuff
+					curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+					curl_setopt($ch, CURLOPT_HEADER, 0);
+					curl_setopt($ch, CURLOPT_FRESH_CONNECT, 1);
+					curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+					curl_setopt($ch, CURLOPT_FORBID_REUSE, 1);
+					curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+					curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 0);
+					curl_setopt($ch, CURLOPT_VERBOSE, 0);
+					curl_setopt($ch, CURLOPT_HTTP_VERSION, '1.0');
+					$data = curl_exec($ch);
+					curl_close($ch);
+					$server_data = simplexml_load_string($data);
+					//end of LSN rDNS records retrieval
+					
 					$ip_array = explode(",", $result["ipaddresses"]);
 					$ipv4_array = array();
-					foreach($ip_array as $value)
+					foreach($ip_array as $value) //look through the list of IP addresses that solusvm has given us
 					{
 						$value = preg_replace('/\s+/', '', $value);
-						if(filter_var($value, FILTER_VALIDATE_IP) == true && inet_pton($value) == true && is_ipv6($value) == false)
+						if(filter_var($value, FILTER_VALIDATE_IP) && inet_pton($value) && !is_ipv6($value))
 						{
 							foreach ($server_data->ipaddress as $serverItem)
 							{
 								if(strval($serverItem->attributes()->ip) == $value)
 								{
-									$ipv4_array[$value] = strval($serverItem->ptr);
+									$ipv4_array[$value] = strval($serverItem->ptr); //yes, this is the IP we are looking for
 									continue;
 								}
 							}
@@ -150,11 +154,20 @@ if ($ca->isLoggedIn()) {
 		}
 		else
 		{
+			//get all the services
 			$templatefile = "rdns_viewservices";
 			$command = "getclientsproducts";
 			$values["clientid"] = $client_id;
-			$results = localAPI($command,$values,$adminuser);
-			$smartyvalues["services"] = $results["products"]["product"];
+			$results = localAPI($command,$values,$adminuser); //call upon the WHMCS api for the list of services the client has
+			
+			$output = array();
+			foreach($results["products"]["product"] as $product) {
+				if($product["serverid"] == solus_service_serverid && $product["status"] == "Active") {
+					//this is a solus VPS and it is also active
+					$output[] = $product;
+				}
+			}
+			$smartyvalues["services"] = $output;
 		}
 		$ca->setTemplate($templatefile);
 		$ca->output();

@@ -11,7 +11,7 @@ function is_ipv6($ip)
 
 function html_sanitise($obj)
 {
-	$return = htmlentities($obj, ENT_QUOTES | ENT_IGNORE, "UTF-8");
+	$return = htmlspecialchars($obj, ENT_QUOTES, "UTF-8");
 	return $return;
 }
 
@@ -19,10 +19,12 @@ function sql_sanitise($data)
 {
 	if($return = mysql_real_escape_string(stripslashes(trim($data))))
 	{
+		//sanitise complete
 		return $return;
 	}
 	else
 	{
+		//mysql error here
 		$error = "Database sanitise error: (" . mysql_errno() . ") \"" . mysql_error() . "\" .";
 		error_log($error);
 		return FALSE;
@@ -31,12 +33,13 @@ function sql_sanitise($data)
 
 if(!$_POST["submit_rdns"])
 {
+	//redirect the user back
 	header('Location: rdns.php');
 	exit();
 }
 else
 {
-	$rdns_ip_addresses = array();
+	$rdns_ip_addresses = array();	//this is the list of IP addresses and its rdns records
 	foreach($_POST as $key => $value)
 	{
 		$key = str_replace("_", ".", $key);
@@ -71,7 +74,7 @@ $smartyvalues["ipv4addresses"] = array();
 # Check login status
 if ($ca->isLoggedIn()) {
 
-	$client_id = (int)html_sanitise(sql_sanitise($ca->getUserID()));
+	$client_id = (int)$ca->getUserID();
 	if(mysql_num_rows(mysql_query("SELECT * FROM tblclients WHERE id='$client_id'")))
 	{
 		$templatefile = "dordns";
@@ -92,7 +95,7 @@ if ($ca->isLoggedIn()) {
 			$values["clientid"] = $client_id;
 			$values["serviceid"] = $client_service_id;
 			$results = localAPI($command,$values,$adminuser);
-			if($results)
+			if($results & $results["products"]["product"]["0"]["status"] == "Active") //check if it is active
 			{
 				$client_server_id = $results["products"]["product"]["0"]["customfields"]["customfield"]["0"]["value"];
 				$postfields["action"] = "vserver-infoall";

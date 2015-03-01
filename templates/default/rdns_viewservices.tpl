@@ -19,7 +19,6 @@
     </thead>
     <tbody>
 {foreach from=$services item=service key=servicekey}
-{if $service.serverid == "1" && $service.status == "Active"}
         <tr>
             <td><strong>{$service.groupname} - {$service.name}</strong>{if $service.domain}<br /><a href="http://{$service.domain}" target="_blank">{$service.domain}</a>{/if}</td>
             <td><span class="label {$service.status}">{$service.status}</span></td>
@@ -27,7 +26,6 @@
                 <a href="rdns.php?q={$service.id}" class="btn">Edit rDNS</a>
             </td>
         </tr>
-{/if}
 {foreachelse}
         <tr>
             <td colspan="6" class="textcenter">{$LANG.norecordsfound}</td>
